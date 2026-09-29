@@ -41,10 +41,16 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux
+            bundle: build/linux/x64/release/bundle
+            artifact: medialib-linux
           - os: windows-latest
             target: windows
+            bundle: build/windows/x64/runner/Release
+            artifact: medialib-windows
           - os: ubuntu-latest
             target: apk
+            bundle: build/app/outputs/flutter-apk/app-release.apk
+            artifact: medialib-android
     steps:
       - uses: actions/checkout@v4
 
@@ -71,3 +77,12 @@ jobs:
 
       - name: Build
         run: flutter build ${{ matrix.target }} --release
+
+      # Downloads are kept as workflow artifacts on every run. To publish a
+      # GitHub Release instead, push a tag (v*) or run the Release workflow
+      # manually.
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.bundle }}

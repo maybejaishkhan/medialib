@@ -1,10 +1,18 @@
 name: Release
 
+# Publishing a release is a deliberate action:
+#   - push a tag, e.g. `git tag v1.0.0 && git push origin v1.0.0`, or
+#   - run this workflow manually and supply the tag to create.
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, e.g. v1.0.0 (created at this commit if it does not exist)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -19,15 +27,12 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux
-            bundle: build/linux/x64/release/bundle
             artifact: medialib-linux
           - os: windows-latest
             target: windows
-            bundle: build/windows/x64/runner/Release
             artifact: medialib-windows
           - os: ubuntu-latest
             target: apk
-            bundle: build/app/outputs/flutter-apk/app-release.apk
             artifact: medialib-android
     steps:
       - uses: actions/checkout@v4
@@ -54,11 +59,28 @@ jobs:
 
       - run: flutter build ${{ matrix.target }} --release
 
-      - name: Upload artifact
+      # Package each build into a single release asset.
+      - name: Package (Linux)
+        if: matrix.target == 'linux'
+        run: |
+          cd build/linux/x64/release
+          zip -r "$GITHUB_WORKSPACE/medialib-linux.zip" bundle
+
+      - name: Package (Windows)
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath medialib-windows.zip
+
+      - name: Package (Android)
+        if: matrix.target == 'apk'
+        run: cp build/app/outputs/flutter-apk/app-release.apk medialib-android.apk
+
+      - name: Upload packaged artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.bundle }}
+          path: medialib-*
 
   release:
     name: Publish GitHub release
@@ -70,7 +92,16 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - uses: softprops/action-gh-release@v2
+      - name: List release assets
+        run: ls -R artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**
+          # On a tag push this is the tag; on a manual run it is the input.
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: artifacts/**
